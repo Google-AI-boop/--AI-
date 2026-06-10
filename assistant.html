@@ -3,155 +3,251 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>谷歌助理示範 (簡易版)</title>
+  <title>Chrome 優化 — 語音助理 (HTML5)</title>
+  <meta name="description" content="HTML5 + Web Speech API 範例：在 Chrome 瀏覽器用的簡易語音助理前端 (支援語音辨識、語音合成、後端回覆)" />
   <style>
-    body { font-family: system-ui, -apple-system, "Noto Sans TC", "Microsoft JhengHei", sans-serif; padding: 24px; background:#f7f7f8; }
-    button { padding: 8px 12px; margin: 6px; }
-    #container { max-width: 720px; margin: 0 auto; }
-    .box { border: 1px solid #ddd; padding: 12px; border-radius: 8px; margin-top: 12px; background:#fff }
-    #transcript { color: #333; font-weight: 600; }
-    #reply { color: #0055aa; margin-top: 8px; }
-    .small { font-size: 0.9rem; color:#666 }
+    :root{--bg:#f5f7fa;--card:#fff;--accent:#0b66ff;--muted:#667085}
+    *{box-sizing:border-box}
+    body{font-family: system-ui, -apple-system, "Noto Sans TC", "Microsoft JhengHei", sans-serif;background:var(--bg);margin:0;padding:24px;color:#0b1a2b}
+    .wrap{max-width:900px;margin:0 auto}
+    header{display:flex;align-items:center;gap:12px}
+    h1{font-size:1.25rem;margin:0}
+    p.lead{margin:6px 0 18px;color:var(--muted)}
+    .card{background:var(--card);border-radius:12px;padding:16px;box-shadow:0 6px 18px rgba(11,22,43,0.06)}
+    .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    button{background:var(--accent);color:#fff;border:0;padding:10px 14px;border-radius:8px;font-weight:600;cursor:pointer}
+    button.ghost{background:transparent;color:var(--accent);border:1px solid rgba(11,102,255,0.12)}
+    button[disabled]{opacity:.5;cursor:not-allowed}
+    .status{margin-left:8px;color:var(--muted)}
+    .grid{display:grid;grid-template-columns:1fr 320px;gap:16px;margin-top:14px}
+    @media(max-width:840px){.grid{grid-template-columns:1fr}}
+    .transcript{font-weight:600;color:#111}
+    .reply{margin-top:8px;color:var(--accent)}
+    input[type="text"]{width:100%;padding:10px;border-radius:8px;border:1px solid #e6eef8}
+    label{display:block;font-size:0.9rem;color:var(--muted);margin-bottom:6px}
+    .small{font-size:0.85rem;color:var(--muted)}
+    .log{max-height:220px;overflow:auto;padding:8px;border-radius:8px;border:1px solid #eef3f9;background:#fbfdff}
+    .log p{margin:6px 0;font-size:0.95rem}
+    .lang-select{padding:8px;border-radius:8px;border:1px solid #e6eef8;background:white}
   </style>
 </head>
 <body>
-  <div id="container">
-    <h1>谷歌助理示範（簡易版）</h1>
-    <p class="small">按「開始聽」說話，助理會用語音回覆。也可用文字輸入。此範例會向 /assistant.php 發出請求取得回覆。</p>
-
-    <div class="box">
+  <main class="wrap">
+    <header>
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden><path d="M12 2v10" stroke="#0b66ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M19 11a7 7 0 11-14 0" stroke="#0b66ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <div>
-        <button id="startBtn">開始聽</button>
-        <button id="stopBtn" disabled>停止</button>
-        <span id="status">狀態：靜止</span>
+        <h1>Chrome 優化 — 語音助理 (HTML5)</h1>
+        <p class="lead">使用 Chrome 的 Web Speech API (SpeechRecognition + SpeechSynthesis)，並向 /assistant.php 發出 POST 取得智慧回覆。</p>
+      </div>
+    </header>
+
+    <section class="card" aria-labelledby="assistant-title">
+      <div class="controls" role="group" aria-label="助理控制">
+        <button id="start">開始聽</button>
+        <button id="stop" disabled>停止</button>
+        <button id="mute" class="ghost">靜音語音回覆</button>
+
+        <div class="status" id="status" aria-live="polite">狀態：準備就緒</div>
+
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <label for="lang" class="small">辨識語言</label>
+          <select id="lang" class="lang-select" aria-label="辨識語言">
+            <option value="zh-TW">中文（繁體，Taiwan）</option>
+            <option value="zh-CN">中文（簡體，China）</option>
+            <option value="zh-HK">中文（香港）</option>
+            <option value="en-US">English (US)</option>
+          </select>
+        </div>
       </div>
 
-      <div style="margin-top:10px;">
-        <div>你說：<div id="transcript">—</div></div>
-        <div>助理回覆：<div id="reply">—</div></div>
-      </div>
+      <div class="grid">
+        <div>
+          <div>
+            <label>辨識結果</label>
+            <div class="transcript" id="transcript">—</div>
+          </div>
 
-      <div style="margin-top:12px;">
-        <input id="textInput" type="text" placeholder="或在此輸入文字後按送出" style="width:70%;padding:8px" />
-        <button id="sendTextBtn">送出</button>
+          <div style="margin-top:12px;">
+            <label>助理回覆</label>
+            <div class="reply" id="reply">—</div>
+          </div>
+
+          <div style="margin-top:12px;">
+            <label for="textInput">或以文字輸入</label>
+            <div style="display:flex;gap:8px">
+              <input id="textInput" type="text" placeholder="請輸入想說的話並按送出" aria-label="文字輸入" />
+              <button id="send">送出</button>
+            </div>
+          </div>
+        </div>
+
+        <aside>
+          <label>互動日誌</label>
+          <div class="log" id="log" aria-live="polite"></div>
+        </aside>
       </div>
-    </div>
-  </div>
+    </section>
+
+    <p class="small" style="margin-top:12px">提示：語音辨識需在 HTTPS 或 localhost 下運作；建議使用最新版本的 Chrome。</p>
+  </main>
 
   <script>
-    // 檢查支援
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      document.getElementById('status').textContent = '狀態：此瀏覽器不支援語音辨識 (請用 Chrome)。';
-    }
-
-    // 元件
-    const startBtn = document.getElementById('startBtn');
-    const stopBtn = document.getElementById('stopBtn');
-    const status = document.getElementById('status');
+    // HTML5 + Chrome 優化前端程式
+    const startBtn = document.getElementById('start');
+    const stopBtn = document.getElementById('stop');
+    const muteBtn = document.getElementById('mute');
+    const statusEl = document.getElementById('status');
     const transcriptEl = document.getElementById('transcript');
     const replyEl = document.getElementById('reply');
     const textInput = document.getElementById('textInput');
-    const sendTextBtn = document.getElementById('sendTextBtn');
+    const sendBtn = document.getElementById('send');
+    const logEl = document.getElementById('log');
+    const langSelect = document.getElementById('lang');
 
-    // 初始化辨識器
-    let recognition;
-    if (SpeechRecognition) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null;
+    let speakingMuted = false;
+
+    function log(message, type='info'){
+      const p = document.createElement('p');
+      p.textContent = message;
+      p.style.margin= '6px 0';
+      if(type==='error') p.style.color = 'crimson';
+      logEl.prepend(p);
+    }
+
+    if (!SpeechRecognition) {
+      statusEl.textContent = '狀態：此瀏覽器不支援 Web Speech API（請使用 Chrome）。';
+      startBtn.disabled = true;
+    } else {
       recognition = new SpeechRecognition();
-      recognition.lang = 'zh-TW'; // 可以改為 zh-CN 或 zh-HK
-      recognition.interimResults = false;
+      recognition.interimResults = true; // 在 Chrome 可取得中間結果
       recognition.maxAlternatives = 1;
+      recognition.continuous = false; // single-utterance by default
 
       recognition.onstart = () => {
-        status.textContent = '狀態：聆聽中……';
-        startBtn.disabled = true;
-        stopBtn.disabled = false;
+        statusEl.textContent = '狀態：聆聽中……';
+        startBtn.disabled = true; stopBtn.disabled = false;
+        log('開始聆聽');
       };
+
       recognition.onend = () => {
-        status.textContent = '狀態：靜止';
-        startBtn.disabled = false;
-        stopBtn.disabled = true;
+        statusEl.textContent = '狀態：靜止';
+        startBtn.disabled = false; stopBtn.disabled = true;
+        log('停止聆聽');
       };
+
       recognition.onerror = (e) => {
-        console.error('recognition error', e);
-        status.textContent = '狀態：錯誤 - ' + (e.error || 'unknown');
-        startBtn.disabled = false;
-        stopBtn.disabled = true;
+        console.error(e);
+        statusEl.textContent = '狀態：錯誤 - ' + (e.error || 'unknown');
+        log('辨識錯誤: ' + (e.error || JSON.stringify(e)), 'error');
+        startBtn.disabled = false; stopBtn.disabled = true;
       };
-      recognition.onresult = (event) => {
-        const text = event.results[0][0].transcript.trim();
-        transcriptEl.textContent = text;
-        handleUserText(text);
+
+      let interim = '';
+      recognition.onresult = (ev) => {
+        interim = '';
+        let finalTranscript = '';
+        for (let i = ev.resultIndex; i < ev.results.length; ++i) {
+          const res = ev.results[i];
+          if (res.isFinal) finalTranscript += res[0].transcript;
+          else interim += res[0].transcript;
+        }
+        transcriptEl.textContent = (finalTranscript || interim) || '—';
+        if (finalTranscript) {
+          handleUserText(finalTranscript.trim());
+        }
       };
     }
 
+    // UI handlers
     startBtn.addEventListener('click', () => {
-      if (recognition) recognition.start();
+      if (!recognition) return;
+      recognition.lang = langSelect.value || 'zh-TW';
+      try {
+        recognition.start();
+      } catch (err) {
+        // start called while running may throw; ignore
+        console.warn(err);
+      }
     });
-    stopBtn.addEventListener('click', () => {
-      if (recognition) recognition.stop();
-    });
+    stopBtn.addEventListener('click', () => { if (recognition) recognition.stop(); });
+    muteBtn.addEventListener('click', () => { speakingMuted = !speakingMuted; muteBtn.textContent = speakingMuted ? '取消靜音' : '靜音語音回覆'; muteBtn.classList.toggle('ghost'); });
+    sendBtn.addEventListener('click', () => { const t = textInput.value.trim(); if (!t) return; transcriptEl.textContent = t; handleUserText(t); textInput.value = ''; });
+    textInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendBtn.click(); });
 
-    sendTextBtn.addEventListener('click', () => {
-      const t = textInput.value.trim();
-      if (!t) return;
-      transcriptEl.textContent = t;
-      handleUserText(t);
-      textInput.value = '';
-    });
-
-    // 處理使用者文字：先嘗試呼叫後端 /assistant.php，若失敗則使用本機簡單意圖
-    async function handleUserText(text) {
+    // 主要處理函式：呼叫後端 /assistant.php，若失敗使用本機 fallback
+    async function handleUserText(text){
       replyEl.textContent = '處理中...';
+      log('使用者: ' + text);
+
+      // POST 給後端
       try {
         const resp = await fetch('/assistant.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text })
         });
-        if (!resp.ok) throw new Error('後端回應錯誤');
+        if (!resp.ok) throw new Error('後端回應 ' + resp.status);
         const data = await resp.json();
         if (data && data.reply) {
-          replyEl.textContent = data.reply;
-          speakResponse(data.reply);
+          showReply(data.reply);
+          log('助理: ' + data.reply);
           return;
         }
-      } catch (err) {
-        console.warn('呼叫後端失敗，使用本機回覆', err);
-        // 繼續到本機回覆
+      } catch (err){
+        console.warn('後端呼叫失敗，使用本機回覆', err);
+        log('後端不可用，使用本機回覆', 'error');
       }
 
-      // 本機 fallback 回覆（簡單示範）
-      const lower = text.toLowerCase();
-      let response = '';
-
-      if (/(你好|哈囉|嗨)/i.test(text)) {
-        response = '你好！很高興為你服務，你需要什麼幫忙？';
-      } else if (/(天氣|氣象)/i.test(text)) {
-        response = '目前我還不能直接取得即時天氣，但你可以說「告訴我今天的天氣」，我會示範如何擴充。';
-      } else if (/(時間|現在幾點)/i.test(text)) {
-        const now = new Date();
-        response = `現在是 ${now.getHours()} 點 ${now.getMinutes()} 分。`;
-      } else if (/(停止|拜拜|掰掰)/i.test(text)) {
-        response = '再見！有需要再叫我～';
-      } else {
-        response = '我聽到你說：' + text + '。目前這是示範回覆。';
-      }
-
-      replyEl.textContent = response;
-      speakResponse(response);
+      // 本機簡易意圖示範
+      const r = localFallbackReply(text);
+      showReply(r);
+      log('助理(本機): ' + r);
     }
 
-    // 語音合成
-    function speakResponse(text) {
+    function showReply(text){
+      replyEl.textContent = text;
+      if (!speakingMuted) speak(text);
+    }
+
+    function localFallbackReply(text){
+      if (/\b(你好|哈囉|嗨|您好)\b/u.test(text)) return '你好！我可以幫你查時間、示範天氣串接，或和你聊天。';
+      if (/\b(時間|現在幾點|現在時間)\b/u.test(text)){
+        const now = new Date(); return `現在是 ${now.getHours()} 點 ${now.getMinutes()} 分`;
+      }
+      if (/\b(天氣|下雨|溫度|氣象)\b/u.test(text)) return '我暫時無法直接抓取即時天氣，請授權我存取天氣 API 後我就能回報。';
+      if (/\b(停止|拜拜|掰掰|再見)\b/u.test(text)) return '再見！有需要再叫我～';
+      return '我聽到你說：' + text + '（這是本機示範回覆）。';
+    }
+
+    // 語音合成（Chrome 可用）
+    function speak(text){
       if (!('speechSynthesis' in window)) return;
-      const uttr = new SpeechSynthesisUtterance(text);
-      uttr.lang = 'zh-TW';
-      uttr.rate = 1;
-      uttr.pitch = 1;
-      speechSynthesis.cancel();
-      speechSynthesis.speak(uttr);
+      const s = new SpeechSynthesisUtterance(text);
+      // 盡量挑選與語言相容的語者
+      const lang = langSelect.value || 'zh-TW';
+      s.lang = lang.replace('zh-TW','zh-TW');
+      s.rate = 1; s.pitch = 1;
+      // 延遲少許，避免與即時辨識衝突
+      setTimeout(()=>{
+        speechSynthesis.cancel();
+        speechSynthesis.speak(s);
+      }, 120);
     }
+
+    // 初始化日誌
+    log('介面已載入，等待使用');
+
+    // 可選：提示用戶麥克風權限
+    async function ensureMicPermission(){
+      if (!navigator.permissions) return;
+      try {
+        const p = await navigator.permissions.query({ name: 'microphone' });
+        if (p.state === 'denied') log('麥克風權限被拒絕，請到瀏覽器設定允許。', 'error');
+      } catch(e) {/* 有些瀏覽器不支援 */}
+    }
+    ensureMicPermission();
   </script>
 </body>
 </html>

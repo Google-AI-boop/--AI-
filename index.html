@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>互動問答 — 幕後製作工作室</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--text:#e6eef8;--accent:#7dd3fc}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,Segoe UI,Roboto,'Noto Sans TC',"Helvetica Neue",Arial;background:linear-gradient(180deg,#071029 0%,#0c1530 100%);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center}
+    .container{width:100%;max-width:800px;padding:24px}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.04);border-radius:12px;padding:18px;box-shadow:0 6px 24px rgba(2,6,23,0.6)}
+    h1{margin:0 0 8px;font-size:20px}
+    p.lead{margin:0 0 16px;color:#a8b3c8}
+    .chat{height:400px;overflow:auto;padding:12px;background:rgba(0,0,0,0.15);border-radius:8px;border:1px solid rgba(255,255,255,0.02)}
+    .message{display:flex;gap:10px;margin-bottom:12px}
+    .me{justify-content:flex-end}
+    .bubble{max-width:78%;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,0.03);color:var(--text);line-height:1.4}
+    .bubble.me{background:linear-gradient(90deg,var(--accent),#60a5fa);color:#02203a}
+    .meta{font-size:12px;color:#9aa6bb;margin-bottom:6px}
+    .controls{display:flex;gap:8px;margin-top:12px}
+    input[type=text]{flex:1;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:var(--text)}
+    button{background:var(--accent);border:0;padding:10px 12px;border-radius:8px;color:#02203a;font-weight:600;cursor:pointer}
+    button.secondary{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--text);font-weight:500}
+    .settings{margin-top:12px;display:flex;gap:8px;align-items:center}
+    .hint{font-size:13px;color:#9aa6bb;margin-top:8px}
+    .small{font-size:13px;color:#9aa6bb}
+    .badge{display:inline-block;padding:4px 8px;border-radius:999px;background:rgba(255,255,255,0.03);font-size:12px;color:#cfeffd}
+    footer{margin-top:10px;color:#8395a6;font-size:13px}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>互動問答 (中文)</h1>
+      <p class="lead">在下方輸入你的問題，我會嘗試回答。你也可以選擇輸入 OpenAI API Key 以使用更強的模型（可選）。</p>
+
+      <div id="chat" class="chat" aria-live="polite"></div>
+
+      <div class="controls">
+        <input id="input" type="text" placeholder="輸入你的問題，按 Enter 或按送出..." autocomplete="off" />
+        <button id="send">送出</button>
+        <button id="clear" class="secondary">清除</button>
+      </div>
+
+      <div class="settings">
+        <label class="small">OpenAI API Key (選填):</label>
+        <input id="apikey" type="text" placeholder="sk-...（不安全，僅示範）" style="flex:1;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:var(--text)" />
+        <button id="useAI" class="secondary">啟用</button>
+      </div>
+
+      <div class="hint">小技巧：你可以問「你好」、「現在幾點」、「介紹自己」或「如何製作影片」。若提供 API Key，頁面會嘗試以 OpenAI 進行更自由回覆。</div>
+
+      <footer>幕後製作工作室 · 互動示範</footer>
+    </div>
+  </div>
+
+  <script>
+    // 簡單的本地回應規則（離線模式）
+    const patternResponses = [
+      {pattern: /^(嗨|哈囉|你好|妳好|你好吗)/i, response: '嗨！我是一個示範聊天機器人，有什麼可以幫你？'},
+      {pattern: /(介紹|是誰|你是)/i, response: '我是「幕後製作工作室」的互動示範頁面，可以回答簡單問題或在設定中使用 OpenAI API 取得更進階回覆。'},
+      {pattern: /(現在.*幾點|幾點)/i, response: ()=>`現在時間：${new Date().toLocaleString()}`},
+      {pattern: /(如何|怎麼|怎樣).*(做|製作|做出).*(影片|video|短片)/i, response: '要製作影片，一般流程：1) 規劃腳本與分鏡；2) 準備拍攝素材或素材庫；3) 使用剪輯軟體（如 Premiere、DaVinci Resolve）進行剪輯；4) 調色、加入字幕與音效；5) 輸出與上傳。需要我展開其中哪一項？'},
+      {pattern: /(謝謝|感謝)/i, response: '不客氣！有其他問題再問我。'},
+      {pattern: /(你能做什麼|可以做什麼)/i, response: '我能示範互動問答、簡單的程式範例、以及在你提供 API Key 時轉由 AI 幫你回答更複雜的問題。'},
+    ];
+
+    const chat = document.getElementById('chat');
+    const input = document.getElementById('input');
+    const sendBtn = document.getElementById('send');
+    const clearBtn = document.getElementById('clear');
+    const apikeyInput = document.getElementById('apikey');
+    const useAI = document.getElementById('useAI');
+
+    let useOpenAI = false;
+    let apiKey = '';
+    let model = 'gpt-4o-mini'; // 可改成你想要的模型
+
+    function appendMessage(text, who='bot'){
+      const el = document.createElement('div');
+      el.className = 'message ' + (who==='me' ? 'me' : '');
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble ' + (who==='me' ? 'me' : '');
+      if(who==='me') bubble.innerText = text;
+      else bubble.innerText = text;
+
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.innerText = who === 'me' ? '你' : '助理';
+
+      el.appendChild(meta);
+      el.appendChild(bubble);
+      chat.appendChild(el);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    function localAnswer(question){
+      for(const pr of patternResponses){
+        const m = question.match(pr.pattern);
+        if(m){
+          const resp = typeof pr.response === 'function' ? pr.response(question) : pr.response;
+          return resp;
+        }
+      }
+      return null;
+    }
+
+    async function askOpenAI(question){
+      if(!apiKey) throw new Error('未設定 API Key');
+      // 範例使用 Chat Completions API
+      const payload = {
+        model: model,
+        messages: [
+          {role:'system', content:'你是一個會用中文回答的助理，請簡潔且友善。'},
+          {role:'user', content: question}
+        ],
+        max_tokens: 600,
+        temperature: 0.7
+      };
+
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + apiKey
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if(!res.ok){
+        const text = await res.text();
+        throw new Error('API 回應錯誤: ' + res.status + ' — ' + text);
+      }
+
+      const data = await res.json();
+      // 兼容不同回應格式
+      if(data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content){
+        return data.choices[0].message.content.trim();
+      }
+      if(data.choices && data.choices[0] && data.choices[0].text){
+        return data.choices[0].text.trim();
+      }
+      return JSON.stringify(data);
+    }
+
+    async function handleSend(){
+      const q = input.value.trim();
+      if(!q) return;
+      appendMessage(q,'me');
+      input.value = '';
+
+      appendMessage('正在思考中...','bot');
+
+      try{
+        if(useOpenAI && apiKey){
+          const answer = await askOpenAI(q);
+          // 將最後一則助理訊息更新為 answer
+          const bubbles = chat.querySelectorAll('.message');
+          const last = bubbles[bubbles.length-1];
+          last.querySelector('.bubble').innerText = answer;
+        } else {
+          const local = localAnswer(q);
+          const bubbles = chat.querySelectorAll('.message');
+          const last = bubbles[bubbles.length-1];
+          if(local){
+            last.querySelector('.bubble').innerText = local;
+          } else {
+            last.querySelector('.bubble').innerText = '抱歉，我還無法回答這個問題。你可以稍微改寫問題或提供更多細節。';
+          }
+        }
+      } catch(err){
+        const bubbles = chat.querySelectorAll('.message');
+        const last = bubbles[bubbles.length-1];
+        last.querySelector('.bubble').innerText = '發生錯誤：' + String(err.message || err);
+      }
+    }
+
+    sendBtn.addEventListener('click', handleSend);
+    input.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ handleSend(); } });
+    clearBtn.addEventListener('click', ()=>{ chat.innerHTML = ''; appendMessage('歡迎！請在下方輸入問題開始互動。'); });
+
+    useAI.addEventListener('click', ()=>{
+      if(useOpenAI){
+        useOpenAI = false; useAI.innerText = '啟用'; useAI.classList.remove('secondary');
+        appendMessage('已關閉 OpenAI 功能，切換為離線回應。');
+      } else {
+        apiKey = apikeyInput.value.trim();
+        if(!apiKey){ alert('請在上方輸入 API Key（若不想使用 API，直接按取消）'); return; }
+        useOpenAI = true; useAI.innerText = '停用'; useAI.classList.add('secondary');
+        appendMessage('已啟用 OpenAI（若 API Key 錯誤或無法連線將回報錯誤）。');
+      }
+    });
+
+    // 初始歡迎
+    appendMessage('歡迎！請在下方輸入問題開始互動。');
+
+  </script>
+</body>
+</html>
